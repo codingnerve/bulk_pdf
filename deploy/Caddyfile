@@ -1,0 +1,48 @@
+# Three hostnames, automatic HTTPS (Let's Encrypt; "localhost" names use Caddy's local CA).
+#   APP_DOMAIN   – the web app
+#   FILES_DOMAIN – public PDF links (read-only, only /pdfs/*)
+#   S3_DOMAIN    – presigned browser uploads (CORS handled here)
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy app:3000
+}
+
+# ---- public PDF links ---------------------------------------------------------------------
+# Only GET/HEAD on /pdfs/*. Staging and revoked ("private/") objects are never reachable here.
+{$FILES_DOMAIN} {
+	@not_pdfs not path /pdfs/*
+	respond @not_pdfs "Not found" 404
+
+	@read_only not method GET HEAD
+	respond @read_only "Method not allowed" 405
+
+	rewrite * /buckets/{$S3_BUCKET}{uri}
+	reverse_proxy seaweed:8888 {
+		# Short cache so revoking a link takes effect within minutes.
+		header_down Cache-Control "public, max-age=300"
+		header_down X-Content-Type-Options "nosniff"
+		header_down Content-Security-Policy "default-src 'none'; frame-ancestors 'self' https://{$APP_DOMAIN}"
+	}
+}
+
+# ---- S3 API for presigned uploads ---------------------------------------------------------
+{$S3_DOMAIN} {
+	@preflight method OPTIONS
+	handle @preflight {
+		header Access-Control-Allow-Origin "https://{$APP_DOMAIN}"
+		header Access-Control-Allow-Methods "PUT, GET, HEAD"
+		header Access-Control-Allow-Headers "*"
+		header Access-Control-Max-Age "3600"
+		header Vary "Origin"
+		respond 204
+	}
+
+	handle {
+		reverse_proxy seaweed:8333 {
+			header_down Access-Control-Allow-Origin "https://{$APP_DOMAIN}"
+			header_down Access-Control-Expose-Headers "ETag"
+			header_down Vary "Origin"
+		}
+	}
+}
