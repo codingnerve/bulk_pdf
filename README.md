@@ -74,7 +74,7 @@ nginx -t && systemctl reload nginx
 certbot --nginx -d pdf.example.com -d files.example.com -d s3.example.com
 ```
 
-You can reuse a domain you already host: create **three new subdomains** (A records to the same server). The app needs the root of its own hostname, so it can't live under a path such as `example.com/pdf`. If ports 3000/8333/8888 are taken, set `APP_BIND_PORT`, `S3_BIND_PORT` and `FILER_BIND_PORT` in `.env` and use the same ports in the nginx file.
+You can reuse a domain you already host: create **three new subdomains** (A records to the same server). The app needs the root of its own hostname, so it can't live under a path such as `example.com/pdf`. The app is published on host port **3010** (not 3000, which other Node sites often use), the S3 API on 8333 and public files on 8888. If any are taken, set `APP_BIND_PORT`, `S3_BIND_PORT` and `FILER_BIND_PORT` in `.env` and use the same ports in the nginx file.
 
 **Operations**
 - **Backups**: back up the `mongo_data` and `seaweed_data` volumes (e.g. `mongodump` plus a volume snapshot). The database holds only metadata; the PDFs live in `seaweed_data`.

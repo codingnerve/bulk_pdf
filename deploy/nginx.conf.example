@@ -6,7 +6,7 @@
 #        nginx -t && systemctl reload nginx
 #        certbot --nginx -d pdf.example.com -d files.example.com -d s3.example.com
 #    Certbot adds the HTTPS (443) blocks and the http→https redirect for you.
-# 3. Ports: 3000 (app), 8888 (public files), 8333 (S3). Change them here AND in .env
+# 3. Ports: 3010 (app), 8888 (public files), 8333 (S3). Change them here AND in .env
 #    (APP_BIND_PORT / FILER_BIND_PORT / S3_BIND_PORT) if another site already uses them.
 
 # ---------------------------------------------------------------- the web app
@@ -16,7 +16,7 @@ server {
     server_name pdf.example.com;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3010;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
