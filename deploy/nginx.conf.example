@@ -1,0 +1,92 @@
+# nginx config for PDFLinker behind an EXISTING nginx (use with docker-compose.shared-proxy.yml).
+#
+# 1. Replace every  example.com  with your domain, and  pdflinker  in /buckets/pdflinker/ with
+#    your S3_BUCKET (default: pdflinker).
+# 2. Save as /etc/nginx/sites-available/pdflinker, symlink into sites-enabled, then:
+#        nginx -t && systemctl reload nginx
+#        certbot --nginx -d pdf.example.com -d files.example.com -d s3.example.com
+#    Certbot adds the HTTPS (443) blocks and the http→https redirect for you.
+# 3. Ports: 3000 (app), 8888 (public files), 8333 (S3). Change them here AND in .env
+#    (APP_BIND_PORT / FILER_BIND_PORT / S3_BIND_PORT) if another site already uses them.
+
+# ---------------------------------------------------------------- the web app
+server {
+    listen 80;
+    listen [::]:80;
+    server_name pdf.example.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        # Rate limiting and login throttling use the real client address from this header.
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ---------------------------------------------------------------- public PDF links (read-only)
+# Only GET/HEAD on /pdfs/*. Staging and revoked ("private/") objects are never reachable here.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name files.example.com;
+
+    if ($request_method !~ ^(GET|HEAD)$) {
+        return 405;
+    }
+
+    location /pdfs/ {
+        rewrite ^/(.*)$ /buckets/pdflinker/$1 break;
+        proxy_pass http://127.0.0.1:8888;
+        proxy_http_version 1.1;
+
+        # Short cache so revoking a link takes effect within minutes.
+        proxy_hide_header Cache-Control;
+        add_header Cache-Control "public, max-age=300" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Content-Security-Policy "default-src 'none'; frame-ancestors 'self' https://pdf.example.com" always;
+    }
+
+    location / {
+        return 404;
+    }
+}
+
+# ---------------------------------------------------------------- S3 API (presigned browser uploads)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name s3.example.com;
+
+    # PDFs go straight through this host; do not limit or buffer them.
+    client_max_body_size 0;
+
+    location / {
+        # CORS preflight answered here (the browser app lives on a different hostname).
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin "https://pdf.example.com" always;
+            add_header Access-Control-Allow-Methods "PUT, GET, HEAD" always;
+            add_header Access-Control-Allow-Headers "*" always;
+            add_header Access-Control-Max-Age 3600 always;
+            add_header Vary "Origin" always;
+            return 204;
+        }
+
+        proxy_pass http://127.0.0.1:8333;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        # S3 request signatures include the Host header: pass it through exactly as received.
+        proxy_set_header Host $http_host;
+        proxy_request_buffering off;
+        proxy_buffering off;
+
+        # Replace (don't duplicate) any CORS headers the storage service adds itself.
+        proxy_hide_header Access-Control-Allow-Origin;
+        proxy_hide_header Access-Control-Expose-Headers;
+        add_header Access-Control-Allow-Origin "https://pdf.example.com" always;
+        add_header Access-Control-Expose-Headers "ETag" always;
+        add_header Vary "Origin" always;
+    }
+}

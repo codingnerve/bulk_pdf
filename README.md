@@ -61,6 +61,21 @@ What each service does:
 
 Trying it on one machine first? Set `APP_DOMAIN=localhost`, `FILES_DOMAIN=files.localhost`, `S3_DOMAIN=s3.localhost`; Caddy then uses its own local certificate authority.
 
+### Already running other sites on the server? (shared nginx)
+
+Ports 80/443 can only belong to one program, so if nginx/Apache already serves other sites, don't run the bundled Caddy. Use the override file, which publishes the services on `127.0.0.1` only, and let your existing web server proxy to them:
+
+```bash
+echo "COMPOSE_FILE=docker-compose.yml:docker-compose.shared-proxy.yml" >> .env
+docker compose up -d --build
+cp deploy/nginx.conf.example /etc/nginx/sites-available/pdflinker   # edit the domain names
+ln -s /etc/nginx/sites-available/pdflinker /etc/nginx/sites-enabled/
+nginx -t && systemctl reload nginx
+certbot --nginx -d pdf.example.com -d files.example.com -d s3.example.com
+```
+
+You can reuse a domain you already host: create **three new subdomains** (A records to the same server). The app needs the root of its own hostname, so it can't live under a path such as `example.com/pdf`. If ports 3000/8333/8888 are taken, set `APP_BIND_PORT`, `S3_BIND_PORT` and `FILER_BIND_PORT` in `.env` and use the same ports in the nginx file.
+
 **Operations**
 - **Backups**: back up the `mongo_data` and `seaweed_data` volumes (e.g. `mongodump` plus a volume snapshot). The database holds only metadata; the PDFs live in `seaweed_data`.
 - **Updates**: `git pull && docker compose up -d --build`. Pin `chrislusf/seaweedfs` to a specific tag in `docker-compose.yml` for production.

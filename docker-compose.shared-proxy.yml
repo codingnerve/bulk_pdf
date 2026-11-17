@@ -1,0 +1,23 @@
+# Use this when the server ALREADY runs a web server (nginx/Apache/...) on ports 80/443.
+# It switches off the bundled Caddy and publishes the three services on 127.0.0.1 only, so
+# your existing web server can reverse-proxy to them. Nothing is exposed to the internet directly.
+#
+#   echo "COMPOSE_FILE=docker-compose.yml:docker-compose.shared-proxy.yml" >> .env
+#   docker compose up -d --build
+#
+# If one of the ports below is taken by another site, change it here (or set the *_BIND_PORT
+# variables in .env) and use the same port in your nginx config.
+
+services:
+  caddy:
+    # Never started unless you run `docker compose --profile standalone up`.
+    profiles: ["standalone"]
+
+  app:
+    ports:
+      - "127.0.0.1:${APP_BIND_PORT:-3000}:3000"
+
+  seaweed:
+    ports:
+      - "127.0.0.1:${S3_BIND_PORT:-8333}:8333" # S3 API (presigned browser uploads)
+      - "127.0.0.1:${FILER_BIND_PORT:-8888}:8888" # public file reads
